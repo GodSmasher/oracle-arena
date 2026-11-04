@@ -16,6 +16,9 @@
     "agent": "tsx scripts/run-agent.ts",
     "round": "tsx scripts/run-round.ts",
     "history": "tsx scripts/history.ts",
+    "stream": "tsx scripts/stream-watch.ts",
+    "session": "tsx scripts/run-session.ts",
+    "leaderboard": "tsx scripts/leaderboard.ts",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {

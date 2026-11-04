@@ -1,25 +1,40 @@
 # Oracle Arena
 
-Live pixel-art prediction market where 4 AI agents compete to answer questions by autonomously purchasing intelligence through [Telegraph Protocol](https://telegraphprotocol.com).
+**4 AI analysts watch Telegraph's daemon feed in real-time and publish signed predictions. Subscribe to the analyst whose beat matches yours.**
 
 Built for **Telegraph Hackathon Season II** — Apps & Agents track.
 Missions **#10 Model Economy** + **#7 Consumer Platform**.
 
-**Concept mockup:** https://claude.ai/artifact/H8bHRDNLBgAZDhZHWVLtNx
+Interactive concept mockup: https://claude.ai/artifact/H8bHRDNLBgAZDhZHWVLtNx
 
 ---
 
-## Status
+## How it works
 
-End-to-end flow works on Sepolia testnet:
+The Telegraph **Daemon** publishes 150,000+ prediction-style questions, each scored 0–10 for interest and auto-answered by a ranked miner:
 
-- 4 autonomous agents (Alice, Bob, Carl, Dana)
-- Each reasons with a Nebius-hosted LLM (default: Qwen3-235B-Instruct)
-- Each pays Telegraph $0.01 USDC per answer via the x402 **escrow** scheme
-- Receipts carry a `signal_hash` from the miner (on-chain proof)
-- An off-chain judge compares bids to ground truth, declares a winner, and pays out the pool
+```
+Will Russia attack a NATO country?     i=10  GEOPOLITICS   → collector-gdelt
+Will GPT-6 Astra beat DeepMind Orion?  i=10  AI            → collector-hackernews
+Will Ultragenyx gain TIO approval?      i=7  PHARMA        → collector-clinicaltrials
+```
 
-A 4-agent round takes ~8 seconds and costs ~$0.04 USDC.
+These signals are **free to read** via the public Daemon feed. Oracle Arena's 4 analysts:
+
+- **ALICE** · Geopolitics / macro / conflict
+- **BOB** · Markets / finance / economics
+- **CARL** · Tech / AI / science / startups
+- **DANA** · Pharma / health / climate / clinical trials
+
+...each watch the feed, read the miner's raw output, and publish a calibrated prediction (`YES` / `NO` / `SKIP`) with confidence and a one-sentence tldr.
+
+Over time, each analyst builds a track record on their beat. Subscribers (compliance teams, journalists, traders, investigators) pay a flat fee to follow the analyst whose signal matches their domain, paying a fraction of what they'd pay a Refinitiv/World-Check seat.
+
+## Why this works where v1 didn't
+
+**v1** was 4 agents live-buying $0.12 of intelligence per round to answer user-submitted predictions. Cost-per-answer was higher than any user would pay — pointed out by the Telegraph admin on day 1.
+
+**v2** reads the daemon feed instead. Signals are free. Analysis is cheap (~$0.0005 of Nebius inference per alert). The product is the *curated per-analyst subscription*, not the raw intelligence.
 
 ## Quick start
 
@@ -28,65 +43,55 @@ npm install
 cp .env.example .env
 # fill NEBIUS_API_KEY in .env
 
-# 1. Discover live Telegraph intents (free)
-npm run intents
+# 1. See what the daemon is producing right now
+npm run stream           # live tail
+npx tsx scripts/feed-probe.ts   # one-shot snapshot
 
-# 2. Generate 4 burner wallets — paste PKs into .env
-npm run wallet
+# 2. Run a live analyst session (reads feed, prints alerts, saves to SQLite)
+npm run session -- 8 120   # min_interest 8, for 120 seconds
 
-# 3. Fund the first wallet with ~0.5 Sepolia ETH from any faucet
-#    e.g. https://sepolia-faucet.pk910.de
-
-# 4. Mint 100 USDC testnet tokens to each agent
-npm run mint
-
-# 5. Approve + deposit 10 USDC per agent into Telegraph escrow
-npm run escrow:deposit
-
-# 6. Run a full round — 4 agents, 1 judge
-npm run round -- "What is the current price of Bitcoin in USD?" "95000"
+# 3. View the per-analyst leaderboard
+npm run leaderboard
 ```
 
 ## Architecture
 
 ```
 src/
-  telegraph/client.ts   — /v1/ask with automatic x402 escrow signing (EIP-191)
-  agents/agent.ts       — LLM tool-use loop with buy_intelligence / ask_free_form / place_bid
+  telegraph/
+    daemon.ts       — free REST reader for the Daemon feed (core input)
+    client.ts       — legacy: paid /v1/ask with x402 escrow (v1 path, kept for compat)
+  agents/
+    analyst.ts      — v2 analyst: reads a signal, publishes a signed Alert
+    agent.ts        — v1 agent (kept for comparative benchmarks)
   arena/
-    personalities.ts    — Alice/Bob/Carl/Dana voices (distinct strategies)
-    round.ts            — Promise.all over 4 agents, then judge
-  judge/judge.ts        — distance scoring (YES/NO, numeric, Jaccard for text)
-                          with a 20% threshold for payout
+    analysts.ts     — v2 analyst roster with category-weighted beats
+    personalities.ts, round.ts  — v1 competitive rounds
+  judge/judge.ts    — v1 distance-based winner picker
+  storage/
+    alerts.ts       — SQLite for v2 alerts
+    db.ts           — SQLite for v1 rounds/bids/receipts
 scripts/
-  list-intents.ts       — discover canonical intents + miner counts
-  setup-wallet.ts       — generate 4 burner PKs
-  mint-usdc.ts          — public mint on the test-USDC contract
-  escrow-deposit.ts     — approve + EscrowFacet.depositUSDC for all 4 agents
-  run-round.ts          — colored terminal output of a full round
-  test-ask.ts           — show the 402 response shape (debug)
-  test-judge.ts         — judge dry-run with fake bids (no API, no gas)
+  stream-watch.ts   — live-tail the daemon feed
+  feed-probe.ts     — one-shot snapshot of recent signals + sources
+  run-session.ts    — v2 analyst session runner
+  leaderboard.ts    — per-analyst stats + latest alerts
+  run-round.ts      — v1 competitive round runner
+  escrow-deposit.ts — approve + deposit USDC for v1 paid calls
 ```
-
-## Payment flow
-
-Each Telegraph `/v1/ask` returns `402 Payment Required` with two options:
-
-- `exact` — EIP-3009 TransferWithAuthorization (gasless USDC transfer the server submits)
-- `escrow` — EIP-191 personal_sign of a challenge; funds are deducted at epoch close from a pre-deposited balance
-
-We use **escrow** because it's dramatically simpler: deposit once, sign a short challenge per request, no per-request gas.
 
 ## Roadmap
 
-See the **Issues** tab for the live backlog. Milestones:
+See the **Issues** tab. Milestones:
 
 | Week | Goal |
 |---|---|
-| 1 ✅ | first autonomous Telegraph purchase end-to-end |
-| 2 | diverse intents per agent, multi-source aggregation, SQLite round history |
-| 3 | pixel-art Next.js frontend wired to the backend over WebSocket |
-| 4 | signal-feed API + subscription tiers, demo video, submission |
+| 1 ✅ | v1 e2e (first autonomous Telegraph purchase) |
+| 2 ✅ | v1 polish (diverse intents, multi-source, SQLite) |
+| 2.5 ✅ | **pivot to v2** (daemon-feed consumption + analyst alerts) |
+| 3 | Next.js pixel-art frontend over WebSocket event bus |
+| 3.5 | Public signal-feed API + subscription tiers |
+| 4 | Demo video, submission |
 
 **Submission deadline:** 1 Dec 2026 23:59 UTC.
 
@@ -98,3 +103,4 @@ See the **Issues** tab for the live backlog. Milestones:
 | USDC (test) | `0xcc194e1a843B658526D0D5C431f670028582Ae17` (public `mint()`) |
 | Telegraph Diamond | `0x3624EB012B5E998BB57B6bE6C9Cfc9c4bc5eb99b` |
 | Engine | `https://devnode.telegraphprotocol.com/engine` |
+| Daemon feed | `https://devnode.telegraphprotocol.com/daemon/api/questions` |
