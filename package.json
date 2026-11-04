@@ -8,11 +8,15 @@
     "intents": "tsx scripts/list-intents.ts",
     "wallet": "tsx scripts/setup-wallet.ts",
     "ask": "tsx scripts/test-ask.ts",
+    "mint": "tsx scripts/mint-usdc.ts",
+    "balance": "tsx scripts/check-balance.ts",
+    "escrow:deposit": "tsx scripts/escrow-deposit.ts",
+    "agent": "tsx scripts/run-agent.ts",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.33.0",
     "dotenv": "^16.4.5",
+    "openai": "^4.77.0",
     "undici": "^7.0.0",
     "viem": "^2.21.0"
   },
