@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "description": "Live pixel-art prediction market where AI agents compete by buying intelligence through Telegraph",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "intents": "tsx scripts/list-intents.ts",
     "wallet": "tsx scripts/setup-wallet.ts",
@@ -13,9 +15,12 @@
     "escrow:deposit": "tsx scripts/escrow-deposit.ts",
     "agent": "tsx scripts/run-agent.ts",
     "round": "tsx scripts/run-round.ts",
+    "history": "tsx scripts/history.ts",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.0.3",
     "dotenv": "^16.4.5",
     "openai": "^4.77.0",
     "undici": "^7.0.0",

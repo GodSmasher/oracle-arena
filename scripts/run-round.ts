@@ -11,6 +11,7 @@ import "dotenv/config";
 import OpenAI from "openai";
 import { listIntents } from "../src/telegraph/client.ts";
 import { runRound } from "../src/arena/round.ts";
+import { Store } from "../src/storage/db.ts";
 
 const question = process.argv[2] ?? "What is the current price of Bitcoin in USD?";
 const truth = process.argv[3] ?? "unknown";
@@ -93,6 +94,12 @@ async function main() {
   console.log(
     `💰 Total spent: $${result.runs.reduce((s, r) => s + r.spent, 0).toFixed(4)} USDC across all agents`,
   );
+
+  // Persist
+  const store = new Store();
+  const roundId = store.saveRound(result);
+  store.close();
+  console.log(`\n💾 Saved as round #${roundId} in data/oracle-arena.db`);
 }
 
 main().catch((e) => {
