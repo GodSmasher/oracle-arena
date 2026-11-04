@@ -12,6 +12,7 @@
     "balance": "tsx scripts/check-balance.ts",
     "escrow:deposit": "tsx scripts/escrow-deposit.ts",
     "agent": "tsx scripts/run-agent.ts",
+    "round": "tsx scripts/run-round.ts",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
