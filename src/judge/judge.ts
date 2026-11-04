@@ -27,10 +27,10 @@ export interface Verdict {
 /**
  * Normalize an answer: strip punctuation, lowercase, short-form.
  */
-function normalize(s: string): string {
-  return s
+function normalize(s: unknown): string {
+  return String(s)
     .toLowerCase()
-    .replace(/[.,!?'"`]/g, "")
+    .replace(/[,!?'"`]/g, "") // keep the decimal dot!
     .trim();
 }
 

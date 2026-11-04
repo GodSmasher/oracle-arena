@@ -1,25 +1,15 @@
 /**
- * Minimal Telegraph engine client with x402 payment signing.
+ * Minimal Telegraph engine client with escrow-scheme x402 payment signing.
  *
- * Flow: ask() → first request returns 402 → sign EIP-3009 transferWithAuthorization
- *       payload → re-send with X-PAYMENT header → get the answer + receipt.
- *
- * For MVP we use the per-request x402 "exact" scheme. Escrow is a later optimization.
+ * Flow:
+ *   1. Pre-fund the caller's escrow via EscrowFacet.depositUSDC (one-off, see scripts/escrow-deposit.ts).
+ *   2. Each /v1/ask call returns 402 with payment requirements.
+ *   3. Sign the escrow payment message (EIP-191 personal_sign) and resend with X-PAYMENT header.
+ *   4. Server deducts from the escrow at epoch close.
  */
 import { request } from "undici";
-import {
-  type Account,
-  type Hex,
-  createWalletClient,
-  http,
-  parseUnits,
-  keccak256,
-  encodeAbiParameters,
-  stringToBytes,
-  bytesToHex,
-} from "viem";
+import { type Hex, bytesToHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { sepolia } from "viem/chains";
 
 const ENGINE = process.env.TELEGRAPH_ENGINE_URL ?? "https://devnode.telegraphprotocol.com/engine";
 
@@ -48,6 +38,7 @@ interface PaymentRequirement {
   network: string;
   payTo: `0x${string}`;
   maxAmountRequired?: string;
+  price?: string;
   asset?: `0x${string}`;
   extra?: Record<string, unknown>;
 }
@@ -59,82 +50,48 @@ interface PaymentRequired {
 }
 
 /**
- * Sign an EIP-3009 TransferWithAuthorization payload for the given requirement.
- * This is the "exact" x402 scheme: a gasless USDC transfer the server can submit.
+ * Sign the escrow payment message (EIP-191 personal_sign).
+ * The template is inside `req.extra.message` with {from}/{nonce}/{validAfter}/{validBefore} placeholders.
  */
-async function signX402Exact(
-  pk: Hex,
-  req: PaymentRequirement,
-): Promise<string> {
+async function signEscrow(pk: Hex, req: PaymentRequirement): Promise<string> {
   const account = privateKeyToAccount(pk);
-  const walletClient = createWalletClient({ account, chain: sepolia, transport: http() });
-
-  const validAfter = BigInt(Math.floor(Date.now() / 1000) - 60);
-  const validBefore = BigInt(Math.floor(Date.now() / 1000) + 300);
-  const nonce = bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
-  const amount = BigInt(req.maxAmountRequired ?? "10000");
-  const asset = req.asset ?? (process.env.USDC_TEST_ADDRESS as `0x${string}`);
-
-  const domain = {
-    name: (req.extra?.name as string) ?? "USD Coin",
-    version: (req.extra?.version as string) ?? "2",
-    chainId: 11155111,
-    verifyingContract: asset,
-  } as const;
-
-  const types = {
-    TransferWithAuthorization: [
-      { name: "from", type: "address" },
-      { name: "to", type: "address" },
-      { name: "value", type: "uint256" },
-      { name: "validAfter", type: "uint256" },
-      { name: "validBefore", type: "uint256" },
-      { name: "nonce", type: "bytes32" },
-    ],
-  } as const;
-
-  const message = {
+  const now = Math.floor(Date.now() / 1000);
+  const authorization = {
     from: account.address,
     to: req.payTo,
-    value: amount,
-    validAfter,
-    validBefore,
-    nonce: nonce as `0x${string}`,
+    value: req.maxAmountRequired ?? "10000",
+    validAfter: String(now - 10),
+    validBefore: String(now + 60), // node allows max 2 min window
+    nonce: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
   };
 
-  const signature = await walletClient.signTypedData({
-    account,
-    domain,
-    types,
-    primaryType: "TransferWithAuthorization",
-    message,
-  });
+  // The node rebuilds the message with the from-address lowercased.
+  const template = String(req.extra?.message ?? "");
+  if (!template) throw new Error("escrow challenge has no message template");
+  const message = template
+    .replace(/\{from\}/g, authorization.from.toLowerCase())
+    .replace(/\{nonce\}/g, authorization.nonce)
+    .replace(/\{validAfter\}/g, authorization.validAfter)
+    .replace(/\{validBefore\}/g, authorization.validBefore);
 
-  const payload = {
-    x402Version: 1,
-    scheme: "exact",
+  const signature = await account.signMessage({ message });
+
+  const envelope = {
+    x402Version: 2,
+    scheme: "escrow",
     network: req.network,
-    payload: {
-      signature,
-      authorization: {
-        from: account.address,
-        to: req.payTo,
-        value: amount.toString(),
-        validAfter: validAfter.toString(),
-        validBefore: validBefore.toString(),
-        nonce: nonce,
-      },
-    },
+    payload: { signature, authorization },
   };
 
-  return Buffer.from(JSON.stringify(payload)).toString("base64");
+  return Buffer.from(JSON.stringify(envelope)).toString("base64");
 }
 
 /**
- * Ask Telegraph a question, paying automatically on 402.
+ * Ask Telegraph a question, paying from escrow on 402.
  */
 export async function ask(pk: Hex, body: AskBody): Promise<AskResult> {
-  const first = await request(`${ENGINE}/v1/ask`, {
+  const url = `${ENGINE}/v1/ask`;
+  const first = await request(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -150,12 +107,12 @@ export async function ask(pk: Hex, body: AskBody): Promise<AskResult> {
   }
 
   const paymentReq = (await first.body.json()) as PaymentRequired;
-  const exact = paymentReq.accepts.find((a) => a.scheme === "exact");
-  if (!exact) throw new Error("No exact payment scheme offered");
+  const escrow = paymentReq.accepts.find((a) => a.scheme === "escrow");
+  if (!escrow) throw new Error("No escrow payment scheme offered");
 
-  const paymentHeader = await signX402Exact(pk, exact);
+  const paymentHeader = await signEscrow(pk, escrow);
 
-  const paid = await request(`${ENGINE}/v1/ask`, {
+  const paid = await request(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -166,7 +123,7 @@ export async function ask(pk: Hex, body: AskBody): Promise<AskResult> {
 
   if (paid.statusCode !== 200) {
     const text = await paid.body.text();
-    throw new Error(`Payment failed ${paid.statusCode}: ${text}`);
+    throw new Error(`Payment failed ${paid.statusCode}: ${text.slice(0, 400)}`);
   }
 
   return (await paid.body.json()) as AskResult;
