@@ -34,6 +34,7 @@ export interface AgentConfig {
   personality: string;
   budgetUsd: number;
   maxPurchases: number;
+  intentHints?: string[];
 }
 
 const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -115,23 +116,41 @@ export async function runAgent(
   let purchases = 0;
   let bid: Bid | null = null;
 
+  // Rank the catalogue: hinted intents first (if they're live), then the rest.
+  const hinted = (cfg.intentHints ?? []).filter((i) => intentCatalogue.includes(i));
+  const rest = intentCatalogue.filter((i) => !hinted.includes(i));
+  const prioritizedCatalogue = [...hinted, ...rest].slice(0, 80);
+
+  const preferredBlock =
+    hinted.length > 0
+      ? `Your preferred intent families (play to your strengths unless the question clearly needs something else):
+${hinted.map((i) => "  - " + i).join("\n")}
+`
+      : "";
+
   const systemPrompt = `You are ${cfg.name}, an autonomous research agent in the Oracle Arena.
 
-Your personality: ${cfg.personality}
+Personality: ${cfg.personality}
+${preferredBlock}
+Budget: $${cfg.budgetUsd.toFixed(2)} USDC · max ${cfg.maxPurchases} purchases · each costs ~$0.01.
 
-You have a budget of $${cfg.budgetUsd.toFixed(2)} USDC and can make up to ${cfg.maxPurchases} purchases.
-Each purchase costs about $0.01.
+Your job: answer the prediction question by buying evidence through Telegraph
+(the intelligence marketplace), then placing a bid with an honest confidence.
 
-Your job: answer the given prediction question by buying evidence through Telegraph
-(the intelligence marketplace), then placing a final bid with an honest confidence.
+Live intents (${intentCatalogue.length} total, top ${prioritizedCatalogue.length} shown):
+${prioritizedCatalogue.join(", ")}
 
-Available canonical intents (first 40 shown): ${intentCatalogue.slice(0, 40).join(", ")}
+Strategy guidance:
+- If the question has only ONE dimension (a single price, yes/no about one fact), one good purchase is enough.
+- If the question combines MULTIPLE dimensions (e.g. "will X happen given Y and Z"), buy 2-3 sources from
+  different angles before bidding — this is the whole point of a market.
+- Lean toward your preferred intent families first; only reach outside them when nothing there fits.
+- You are competing with 3 other agents who each have different strengths.
+  Picking the same obvious intent they will pick wastes your edge.
+- Confidence calibration: if you only bought one source, cap confidence around 0.80;
+  if you cross-checked 2+ independent sources that agreed, you may go higher.
 
-Rules:
-- Don't over-buy. If you know the answer with high confidence, bid directly.
-- Pick intents that actually fit the question. Random buys waste budget.
-- When you have enough info, call place_bid. That ends your turn.
-- Be concise in reasoning.
+When you have enough info, call place_bid. That ends your turn. Be concise.
 `;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [

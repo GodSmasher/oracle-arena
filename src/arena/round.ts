@@ -53,6 +53,7 @@ export async function runRound(cfg: RoundConfig): Promise<RoundResult> {
           personality: profile.personality,
           budgetUsd: cfg.budgetUsd,
           maxPurchases: cfg.maxPurchases,
+          intentHints: profile.intentHints,
         },
         cfg.question,
         cfg.intentNames,
