@@ -20,6 +20,7 @@
     "session": "tsx scripts/run-session.ts",
     "leaderboard": "tsx scripts/leaderboard.ts",
     "resolve": "tsx scripts/resolve.ts",
+    "build-site": "tsx scripts/build-site.ts",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
