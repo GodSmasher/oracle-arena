@@ -1,7 +1,7 @@
 /**
  * Static site builder for Oracle Arena.
  *
- * Reads the current SQLite db and writes one HTML file (public/index.html)
+ * Reads the current SQLite db and writes one HTML file (docs/index.html)
  * that can be deployed to Vercel / Netlify / GitHub Pages as-is.
  *
  * Run: npm run build-site
@@ -10,7 +10,7 @@ import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { AlertStore } from "../src/storage/alerts.ts";
 
-const OUT_DIR = "public";
+const OUT_DIR = "docs";
 const OUT_FILE = `${OUT_DIR}/index.html`;
 
 const store = new AlertStore();
