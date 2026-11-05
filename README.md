@@ -5,6 +5,8 @@
 Built for **Telegraph Hackathon Season II** — Apps & Agents track.
 Missions **#10 Model Economy** + **#7 Consumer Platform**.
 
+**Live demo:** https://godsmasher.github.io/oracle-arena/
+
 Interactive concept mockup: https://claude.ai/artifact/H8bHRDNLBgAZDhZHWVLtNx
 
 ---
