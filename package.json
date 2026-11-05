@@ -19,6 +19,7 @@
     "stream": "tsx scripts/stream-watch.ts",
     "session": "tsx scripts/run-session.ts",
     "leaderboard": "tsx scripts/leaderboard.ts",
+    "resolve": "tsx scripts/resolve.ts",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
